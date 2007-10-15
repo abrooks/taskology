@@ -1,0 +1,26 @@
+#!/usr/bin/python
+
+import time
+from Xlib import display
+
+D = display.Display()
+
+oldname = newname = ''
+oldid = newid = 0L
+
+running = True
+while running:
+    try:
+        win = D.get_input_focus()
+        newid = win.focus.id
+        newname = win.focus.get_wm_name()
+        if newname != oldname or newid != oldid:
+            now = time.strftime('%s', time.localtime())
+            if oldname:
+                print "<- %d %#08x %s" % (int(now), oldid, oldname)
+            print "-> %d %#08x %s" % (int(now), newid, newname)
+            oldname = newname
+            oldid = newid
+        time.sleep(0.3)
+    except KeyboardInterrupt:
+        running = False
