@@ -1,26 +1,73 @@
 #!/usr/bin/python
 
+import os
+import re
 import time
+from datetime import datetime, timedelta
 from Xlib import display
+from select import select
+from subprocess import Popen, PIPE
 
 D = display.Display()
 
 oldname = newname = ''
 oldid = newid = 0L
+oldtime = datetime.now()
 
+infds = []
+outfds = []
+errfds = []
+
+fd_handlers = {}
+
+def winmon():
+    global oldname, newname, oldid, newid, oldtime
+    win = D.get_input_focus()
+    newid = win.focus.id
+    newname = win.focus.get_wm_name()
+    if newname != oldname or newid != oldid:
+        now = datetime.now()
+        print "%s %16s %#0.8x %s" % (now.strftime('%s'), (now-oldtime), oldid, oldname)
+        oldtime = now
+        oldname = newname
+        oldid = newid
+
+xss_last = None
+
+def xss_event(fd):
+    global xss_last
+    str = fd.readline()
+    match = re.match(r'(?P<msg>(BLANK|UNBLANK|LOCK)) (?P<time>.*)', str)
+    if match:
+        msg = match.groupdict()['msg']
+        now = datetime(*time.strptime(match.groupdict()['time'], '%c')[0:6])
+        if msg == 'UNBLANK':
+            if xss_last:
+                delta = now - xss_last
+            else:
+                delta = timedelta()
+            print "%s %16s XSCREENSAVER" % (now.strftime('%s'), delta)
+            xss_last = None
+        else:
+            xss_last = now
+
+xss_proc = Popen(['xscreensaver-command', '-watch'], stdout=PIPE)
+
+fd_handlers[xss_proc.stdout] = xss_event
+infds = [xss_proc.stdout]
+
+winmon()
 running = True
 while running:
     try:
-        win = D.get_input_focus()
-        newid = win.focus.id
-        newname = win.focus.get_wm_name()
-        if newname != oldname or newid != oldid:
-            now = time.strftime('%s', time.localtime())
-            if oldname:
-                print "<- %d %#08x %s" % (int(now), oldid, oldname)
-            print "-> %d %#08x %s" % (int(now), newid, newname)
-            oldname = newname
-            oldid = newid
-        time.sleep(0.3)
+        (infda,outfda,errfda) = select(infds, outfds, errfds, 0.3)
+        if infda:
+            for fd in infda:
+                fd_handlers[fd](fd)
+
+        # Always check window state
+        winmon()
     except KeyboardInterrupt:
         running = False
+        # Because otherwise they don't clean up when we go away...
+        os.kill(xss_proc.pid, 15)
