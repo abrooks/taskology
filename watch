@@ -1,5 +1,12 @@
 #!/usr/bin/python
 
+# To make this event driven, watch the root window for
+# _NET_ACTIVE_WINDOW property changes. The down side of event driven
+# is that the window observation may not coincide with the observed
+# property change event. (i.e. active window changes twice before we
+# can observe window focus once). Also, there's more back and forth
+# when windows do switch (prop change event + get_input_focus).
+
 import os
 import re
 import time
@@ -7,6 +14,8 @@ from datetime import datetime, timedelta
 from Xlib import display
 from select import select
 from subprocess import Popen, PIPE
+
+import hotshot
 
 D = display.Display()
 
@@ -56,18 +65,26 @@ xss_proc = Popen(['xscreensaver-command', '-watch'], stdout=PIPE)
 fd_handlers[xss_proc.stdout] = xss_event
 infds = [xss_proc.stdout]
 
-winmon()
-running = True
-while running:
-    try:
-        (infda,outfda,errfda) = select(infds, outfds, errfds, 0.3)
-        if infda:
-            for fd in infda:
-                fd_handlers[fd](fd)
+#profiler = hotshot.Profile()
 
-        # Always check window state
-        winmon()
-    except KeyboardInterrupt:
-        running = False
-        # Because otherwise they don't clean up when we go away...
-        os.kill(xss_proc.pid, 15)
+def main():
+
+    winmon()
+    running = True
+    while running:
+        try:
+            (infda,outfda,errfda) = select(infds, outfds, errfds, 0.3)
+            if infda:
+                for fd in infda:
+                    fd_handlers[fd](fd)
+
+            # Always check window state
+            winmon()
+        except KeyboardInterrupt:
+            running = False
+            # Because otherwise they don't clean up when we go away...
+            os.kill(xss_proc.pid, 15)
+
+#profiler.runcall(main)
+
+main()
