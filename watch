@@ -11,13 +11,24 @@ import os
 import re
 import time
 from datetime import datetime, timedelta
-from Xlib import display
 from select import select
 from subprocess import Popen, PIPE
 
-import hotshot
+try:
+    from Xlib import display
+    winmon_proto = 'xlib'
+except: pass
+try:
+    from osx import something_or_other
+    winmon_proto = 'osx'
+except: pass
+try:
+    from win32 import something_or_other
+    winmon_proto = 'win32'
+except: pass
 
-D = display.Display()
+assert winmon_proto
+
 
 oldname = newname = ''
 oldid = newid = 0L
@@ -29,46 +40,61 @@ errfds = []
 
 fd_handlers = {}
 
-def winmon():
-    global oldname, newname, oldid, newid, oldtime
-    win = D.get_input_focus()
-    newid = win.focus.id
-    newname = win.focus.get_wm_name()
-    if newname != oldname or newid != oldid:
-        now = datetime.now()
-        print "%s %16s %#0.8x %s" % (now.strftime('%s'), (now-oldtime), oldid, oldname)
-        oldtime = now
-        oldname = newname
-        oldid = newid
+class WindowEnvironment:
 
-xss_last = None
+    def winmon_xlib_init()
+        self.D = display.Display()
 
-def xss_event(fd):
-    global xss_last
-    str = fd.readline()
-    match = re.match(r'(?P<msg>(BLANK|UNBLANK|LOCK)) (?P<time>.*)', str)
-    if match:
-        msg = match.groupdict()['msg']
-        now = datetime(*time.strptime(match.groupdict()['time'], '%c')[0:6])
-        if msg == 'UNBLANK':
-            if xss_last:
-                delta = now - xss_last
+    def winmon_xlib():
+        global oldname, newname, oldid, newid, oldtime
+        win = self.D.get_input_focus()
+        newid = win.focus.id
+        newname = win.focus.get_wm_name()
+        if newname != oldname or newid != oldid:
+            now = datetime.now()
+            print "%s %16s %#0.8x %s" % (now.strftime('%s'), (now-oldtime), oldid, oldname)
+            oldtime = now
+            oldname = newname
+            oldid = newid
+
+    def winmon_osx():
+        pass
+
+    def winmon_win32():
+        pass
+
+    if has_xlib:
+        winmon = winmon_xlib
+
+ss_last = None
+
+class ScreenSaver:
+
+    def ss_event(fd):
+        global ss_last
+        str = fd.readline()
+        match = re.match(r'(?P<msg>(BLANK|UNBLANK|LOCK)) (?P<time>.*)', str)
+        if match:
+            msg = match.groupdict()['msg']
+            now = datetime(*time.strptime(match.groupdict()['time'], '%c')[0:6])
+            if msg == 'UNBLANK':
+                if ss_last:
+                    delta = now - ss_last
+                else:
+                    delta = timedelta()
+                print "%s %16s XSCREENSAVER" % (now.strftime('%s'), delta)
+                ss_last = None
             else:
-                delta = timedelta()
-            print "%s %16s XSCREENSAVER" % (now.strftime('%s'), delta)
-            xss_last = None
-        else:
-            xss_last = now
+                ss_last = now
 
-xss_proc = Popen(['xscreensaver-command', '-watch'], stdout=PIPE)
+    def ss_init_xss():
+        global ss_proc = Popen(['xscreensaver-command', '-watch'], stdout=PIPE)
 
-fd_handlers[xss_proc.stdout] = xss_event
-infds = [xss_proc.stdout]
+fd_handlers[ss_proc.stdout] = ss_event
+infds = [ss_proc.stdout]
 
-#profiler = hotshot.Profile()
-
+# This is in a function for profiling purposes
 def main():
-
     winmon()
     running = True
     while running:
@@ -77,7 +103,6 @@ def main():
             if infda:
                 for fd in infda:
                     fd_handlers[fd](fd)
-
             # Always check window state
             winmon()
         except KeyboardInterrupt:
@@ -85,6 +110,5 @@ def main():
             # Because otherwise they don't clean up when we go away...
             os.kill(xss_proc.pid, 15)
 
-#profiler.runcall(main)
-
-main()
+if __name__ == '__main__':
+    main()
